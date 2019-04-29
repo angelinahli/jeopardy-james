@@ -1,18 +1,22 @@
-import os
+import json
 import logging
+import os
 import socket
+import time
 from threading import Thread
 
 from bs4 import BeautifulSoup
 
 HOST = "j-archive.com"
 PORT = 80
-THREADS = 1
+THREADS = 10
 WAIT_SECONDS = 20
 END_ID = 6256
+END_ID = 10
 MAX_RETRIES = 3
 
-if os.getenv("DEBUG") == "true": logging.basicConfig(level=logging.DEBUG)
+if os.getenv("LOG") == "debug": logging.basicConfig(level=logging.DEBUG)
+elif os.getenv("LOG") == "info": logging.basicConfig(level=logging.INFO)
 LOG = logging.getLogger("crawler")
 
 DEFAULT_HEADERS = {
@@ -88,10 +92,48 @@ def get(path, headers={}):
     req = "GET {} HTTP/1.1\n{}\n\n".format(path, build_header_str(headers))
     return send_req(req)
 
-###############
-## HTML Code ##
-###############
+#######################
+## HTML Parsing Code ##
+#######################
 cur_id = 1
+
+class Wager:
+    def __init__(self, before_row, after_row):
+        self.scores_before = self.parse_scores(BeautifulSoup(before_row, "lxml"))
+        self.scores_after = self.parse_scores(BeautifulSoup(after_row, "lxml"))
+
+    def as_json(self):
+        wager_index = -1
+        for i, score in enumerate(self.scores_after):
+            if score != self.scores_before[i]:
+                wager_index = i
+        assert wager_index != -1, "Could not find wager"
+        return self._get_wager_json(wager_index)
+
+    def _get_wager_json(self, wager_index, is_final=False):
+        scores_before = self.scores_before[:]
+        scores_after = self.scores_after[:]
+
+        wager_before = scores_before.pop(wager_index)
+        wager_after = scores_after.pop(wager_index)
+        wager = abs(wager_after - wager_before)
+
+        return {
+            "final": is_final,
+            "score": wager_before,
+            "wager": wager,
+            "opponent_score_1": sorted(scores_before)[0],
+            "opponent_score_2": sorted(scores_before)[0]
+        }
+
+    def parse_scores(self, soup):
+        scores = soup.select("td")
+        if len(scores) == 5: scores = scores[1:4]
+        return [ int(s.text.replace("$", "").replace(",", "")) for s in scores ]
+
+class FinalWager(Wager):
+    def as_json(self):
+        return [ self._get_wager_json(i, True) for i in range(3) ]
 
 class ProcessRequestThread(Thread):
     def __init__(self, url):
@@ -101,20 +143,50 @@ class ProcessRequestThread(Thread):
         self.retries = 0
 
     def run(self):
+        LOG.info("Getting " + self.url)
         resp = get(self.url)
         while resp.status_code() is not 200 and self.retries < MAX_RETRIES:
-            LOG.debug('Abnormal status: ' + str(resp.status_code()))
+            LOG.debug("Abnormal status: " + str(resp.status_code()))
             resp = get(self.url)
 
         if resp.status_code() is not 200:
             LOG.info("failed to get %s (%d)" % (self.url, resp.status_code()))
             return
+
         content = resp.body()
-        soup = BeautifulSoup(content, 'html.parser')
+        soup = BeautifulSoup(content, "lxml")
 
-        all_rows = soup.select(".scores_table tr")
-        first_round_scores = all_rows[1:31]
-        dd_scores = all_scores[32:62]
-        import pdb; pdb.set_trace()
+        all_rows = soup.select("#single_jeopardy_round tr")
+        all_rows += soup.select("#double_jeopardy_round tr")
+        all_rows += soup.select("#final_jeopardy_round table:first-of-type tr")
+        filtered_rows = filter(lambda r: "score_positive" in str(r) or "score_negative" in str(r),
+                all_rows)
 
-ProcessRequestThread(build_path(cur_id)).run()
+        # hack to make things easier, implicit first round of $0 for everyone
+        first_round = "<tr><td>0</td>" + ("<tr>$0</tr>" * 3) + "<tr>0</td></tr>"
+        filtered_rows = [first_round] + filtered_rows
+
+        json_data = []
+        for i, row in enumerate(filtered_rows):
+            row = str(row)
+            if "ddred" not in row: continue
+            wager_obj = Wager(str(filtered_rows[i-1]), row)
+            json_data.append(wager_obj.as_json())
+        final_wager_obj = FinalWager(str(filtered_rows[-2]), str(filtered_rows[-1]))
+        json_data += final_wager_obj.as_json()
+        self.result = json_data
+        return None
+
+
+data = []
+while cur_id < END_ID:
+    ids = range(cur_id, min(cur_id + THREADS, END_ID + 1))
+    threads = [ ProcessRequestThread(build_path(game_id)) for game_id in ids ]
+
+    [ t.start() for t in threads ]
+    [ t.join() for t in threads ]
+
+    [ data.append(t.result) for t in threads ]
+    time.sleep(WAIT_SECONDS)
+    cur_id += THREADS
+import pprint; pprint.pprint(data)
