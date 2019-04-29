@@ -12,7 +12,6 @@ PORT = 80
 THREADS = 10
 WAIT_SECONDS = 20
 END_ID = 6256
-END_ID = 10
 MAX_RETRIES = 3
 
 if os.getenv("LOG") == "debug": logging.basicConfig(level=logging.DEBUG)
@@ -189,4 +188,5 @@ while cur_id < END_ID:
     [ data.append(t.result) for t in threads ]
     time.sleep(WAIT_SECONDS)
     cur_id += THREADS
-import pprint; pprint.pprint(data)
+
+with open("data.json", "w") as outfile: json.dump(data, outfile)
