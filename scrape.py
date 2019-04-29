@@ -155,20 +155,21 @@ class ProcessRequestThread(Thread):
         content = resp.body()
         soup = BeautifulSoup(content, "lxml")
 
-        all_rows = soup.select("#single_jeopardy_round tr")
+        all_rows = soup.select("#jeopardy_round tr")
         all_rows += soup.select("#double_jeopardy_round tr")
         all_rows += soup.select("#final_jeopardy_round table:first-of-type tr")
         filtered_rows = filter(lambda r: "score_positive" in str(r) or "score_negative" in str(r),
                 all_rows)
 
         # hack to make things easier, implicit first round of $0 for everyone
-        first_round = "<tr><td>0</td>" + ("<tr>$0</tr>" * 3) + "<tr>0</td></tr>"
+        first_round = "<tr><td>0</td>" + ("<tr>$0</tr>" * 3) + "<td>0</td></tr>"
         filtered_rows = [first_round] + filtered_rows
 
         json_data = []
         for i, row in enumerate(filtered_rows):
             row = str(row)
             if "ddred" not in row: continue
+
             wager_obj = Wager(str(filtered_rows[i-1]), row)
             json_data.append(wager_obj.as_json())
         final_wager_obj = FinalWager(str(filtered_rows[-2]), str(filtered_rows[-1]))
@@ -178,8 +179,8 @@ class ProcessRequestThread(Thread):
 
 
 data = []
-while cur_id < END_ID:
-    ids = range(cur_id, min(cur_id + THREADS, END_ID + 1))
+while cur_id <= END_ID:
+    ids = range(cur_id, min(cur_id + THREADS + 1, END_ID + 1))
     threads = [ ProcessRequestThread(build_path(game_id)) for game_id in ids ]
 
     [ t.start() for t in threads ]
