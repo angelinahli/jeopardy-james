@@ -183,10 +183,11 @@ while cur_id <= END_ID:
     ids = range(cur_id, min(cur_id + THREADS + 1, END_ID + 1))
     threads = [ ProcessRequestThread(build_path(game_id)) for game_id in ids ]
 
-    for t in threads: t.start()
-    for t in threads: t.join()
+    [ t.start() for t in threads ]
+    [ t.join() for t in threads ]
 
-    for t in threads: data += t.result
+    for t in threads:
+        if t.result is not None: data += t.result
     time.sleep(WAIT_SECONDS)
     cur_id += THREADS
 
