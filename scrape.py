@@ -11,7 +11,7 @@ HOST = "j-archive.com"
 PORT = 80
 THREADS = 10
 WAIT_SECONDS = 20
-END_ID = 6256
+END_ID = 6255
 MAX_RETRIES = 3
 
 if os.getenv("LOG") == "debug": logging.basicConfig(level=logging.DEBUG)
@@ -136,7 +136,7 @@ class FinalWager(Wager):
 
 class ProcessRequestThread(Thread):
     def __init__(self, url):
-        Thread.__init__(self)
+        Thread.__init__(self, name=url)
         self.url = url
         self.result = None
         self.retries = 0
@@ -162,7 +162,7 @@ class ProcessRequestThread(Thread):
                 all_rows)
 
         # hack to make things easier, implicit first round of $0 for everyone
-        first_round = "<tr><td>0</td>" + ("<tr>$0</tr>" * 3) + "<td>0</td></tr>"
+        first_round = "<tr><td>0</td>" + ("<td>$0</td>" * 3) + "<td>0</td></tr>"
         filtered_rows = [first_round] + filtered_rows
 
         json_data = []
