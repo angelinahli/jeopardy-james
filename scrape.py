@@ -94,7 +94,6 @@ def get(path, headers={}):
 #######################
 ## HTML Parsing Code ##
 #######################
-cur_id = 1
 
 class Wager:
     def __init__(self, before_row, after_row):
@@ -179,14 +178,15 @@ class ProcessRequestThread(Thread):
 
 
 data = []
+cur_id = 1
 while cur_id <= END_ID:
     ids = range(cur_id, min(cur_id + THREADS + 1, END_ID + 1))
     threads = [ ProcessRequestThread(build_path(game_id)) for game_id in ids ]
 
-    [ t.start() for t in threads ]
-    [ t.join() for t in threads ]
+    for t in threads: t.start()
+    for t in threads: t.join()
 
-    [ data.append(t.result) for t in threads ]
+    for t in threads: data += t.result
     time.sleep(WAIT_SECONDS)
     cur_id += THREADS
 
